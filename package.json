@@ -1,0 +1,24 @@
+{
+  "name": "pi-workspace-guard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Workspace Kit workflow guard extension for Pi",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "workflow-guard"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/tyf1996/pi-workspace-guard.git"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --check extensions/workspace-guard.ts && node --experimental-strip-types tests/workspace-guard-smoke.mjs"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/workspace-guard.ts"
+    ]
+  }
+}
