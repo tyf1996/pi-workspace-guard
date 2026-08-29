@@ -10,6 +10,8 @@
 pi install git:git@github.com:tyf1996/pi-workspace-guard
 ```
 
+独立 package 与 Workspace Kit 安装器复制的 `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/workspace-guard.ts` 二选一。若该文件已经存在，先备份并移出 `extensions/` 目录，再安装 package，避免 Pi 重复加载两份 Extension。
+
 启动或重启 Pi；已打开的 Pi 会话执行：
 
 ```text
