@@ -1,4 +1,4 @@
-// workspace-kit:managed-pi-extension name=workspace-guard version=2
+// workspace-kit:managed-pi-extension name=workspace-guard version=3
 
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
@@ -17,12 +17,9 @@ const MANAGED_OVERLAY_PATHS = new Set([
 
 const COMPLIANCE_PROTOCOL = `
 <workspace_guard>
-Workspace Kit 的受管规则已启用。把 AGENTS.md 视为本轮工作合同，并遵守以下执行顺序：
-1. 首次写入前读取当前 .workspace/PROJECT_STATE.md；Git 项目还要成功执行 git status、git diff 和 git diff --cached。
-2. 工具被 workspace-guard 阻断时，先补齐原因中指出的前置动作；不得换用其他写入工具绕过。
-3. 保留已有改动，只修改当前 worktree 范围内的目标；受管 overlay 副本保持只读。
-4. 完成前按实际改动执行必要验证、复查 diff，并在产生持久结论、变更或阻塞时更新 PROJECT_STATE.md。验证失败或结果未知时不得宣称完成。
-workspace-guard 是工作流门禁，不是操作系统 sandbox；未被机械阻断的动作仍须遵守 AGENTS.md。
+Pi 当前加载的全部 AGENTS.md 是本轮工作的完整规则合同，必须逐条遵守所有适用于当前任务、动作和答复的要求。
+不得选择性忽略、弱化或用模型默认习惯替代这些规则；每次工具调用、文件修改和最终答复前都必须检查相关规则，完成前必须对照全部适用规则自检。
+workspace-guard 只强制部分可机械判断的边界；未被阻断不代表符合 AGENTS.md。
 </workspace_guard>`;
 
 const DANGEROUS_COMMANDS = [

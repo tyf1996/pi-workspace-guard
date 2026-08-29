@@ -165,6 +165,10 @@ try {
 	assert.equal(inactive, undefined);
 	const active = await activate(harness, root);
 	assert.match(active.systemPrompt, /<workspace_guard>/);
+	assert.match(active.systemPrompt, /完整规则合同/);
+	assert.match(active.systemPrompt, /不得选择性忽略/);
+	assert.match(active.systemPrompt, /未被阻断不代表符合 AGENTS\.md/);
+	assert.doesNotMatch(active.systemPrompt, /遵守以下执行顺序/);
 	assert.match(active.systemPrompt, /写入前仍需/);
 	assert.ok(harness.commands.has("workspace-guard"));
 
