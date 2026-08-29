@@ -22,6 +22,7 @@ function createHarness(root, options = {}) {
 	const notifications = [];
 	const confirms = [];
 	const diffCheckResults = [...(options.diffCheckResults ?? [])];
+	const contextFiles = options.contextFiles ?? [{ path: join(root, "AGENTS.md"), content: MANAGED_CONTEXT }];
 	let trackedManagedPath = options.trackedManagedPath ?? true;
 
 	const pi = {
@@ -57,6 +58,9 @@ function createHarness(root, options = {}) {
 	const ctx = {
 		cwd: root,
 		hasUI: options.hasUI ?? false,
+		getSystemPromptOptions() {
+			return { cwd: root, contextFiles };
+		},
 		ui: {
 			notify(message, type) {
 				notifications.push({ message, type });
@@ -134,6 +138,19 @@ try {
 	await writeFile(join(root, ".workspace", "PROJECT_STATE.md"), "# state\n", "utf8");
 	await writeFile(join(root, "AGENTS.md"), MANAGED_CONTEXT, "utf8");
 	await writeFile(join(root, "target.txt"), "before\n", "utf8");
+
+	const commandOnly = createHarness(root);
+	await commandOnly.commands.get("workspace-guard").handler("", commandOnly.ctx);
+	assert.match(commandOnly.notifications.at(-1).message, /规则版本：10/);
+	assert.match(commandOnly.notifications.at(-1).message, new RegExp(`workspace：${root}`));
+
+	const unmanagedCommand = createHarness(root, {
+		contextFiles: [{ path: join(root, "AGENTS.md"), content: "ordinary AGENTS.md" }],
+	});
+	await unmanagedCommand.commands.get("workspace-guard").handler("", unmanagedCommand.ctx);
+	assert.match(unmanagedCommand.notifications.at(-1).message, /门禁未启用/);
+	assert.match(unmanagedCommand.notifications.at(-1).message, /当前 cwd/);
+	assert.match(unmanagedCommand.notifications.at(-1).message, /AGENTS\.md/);
 
 	const harness = createHarness(root, {
 		diffCheckResults: [

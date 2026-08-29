@@ -1,4 +1,4 @@
-// workspace-kit:managed-pi-extension name=workspace-guard version=1
+// workspace-kit:managed-pi-extension name=workspace-guard version=2
 
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
@@ -207,8 +207,8 @@ export default function workspaceGuard(pi) {
 		state.lastCompletionFailure = undefined;
 	}
 
-	async function activate(event, ctx) {
-		const context = managedContext(event.systemPromptOptions.contextFiles, ctx.cwd);
+	async function activate(contextFiles, ctx) {
+		const context = managedContext(contextFiles, ctx.cwd);
 		if (!context) {
 			state.active = false;
 			return false;
@@ -251,7 +251,7 @@ export default function workspaceGuard(pi) {
 	}
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		if (!(await activate(event, ctx))) return undefined;
+		if (!(await activate(event.systemPromptOptions.contextFiles, ctx))) return undefined;
 		const missing = preflightMissing();
 		const status = missing.length === 0 ? "写入前置检查已满足。" : `写入前仍需：${missing.join("、")}。`;
 		return { systemPrompt: `${event.systemPrompt}\n${COMPLIANCE_PROTOCOL}\n当前状态：${status}` };
@@ -374,8 +374,16 @@ export default function workspaceGuard(pi) {
 	pi.registerCommand("workspace-guard", {
 		description: "显示 Workspace Kit 工作流门禁状态",
 		handler: async (_args, ctx) => {
-			if (!state.active) {
-				ctx.ui.notify("workspace-guard：当前会话未加载 Workspace Kit 受管 AGENTS.md，门禁未启用。", "info");
+			const contextFiles = ctx.getSystemPromptOptions().contextFiles ?? [];
+			if (!(await activate(contextFiles, ctx))) {
+				const contextPaths = contextFiles
+					.filter((file) => typeof file.path === "string")
+					.map((file) => resolve(ctx.cwd, file.path));
+				const loaded = contextPaths.length > 0 ? contextPaths.map((path) => `- ${path}`).join("\n") : "（无）";
+				ctx.ui.notify(
+					`workspace-guard：Pi 当前未加载 Workspace Kit 受管 AGENTS.md，门禁未启用。\n当前 cwd：${ctx.cwd}\nPi 已加载 context files：\n${loaded}`,
+					"info",
+				);
 				return;
 			}
 			const checks = [

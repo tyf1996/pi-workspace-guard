@@ -4,10 +4,10 @@
 
 ## 安装
 
-当前仓库为私有仓库。另一台设备配置好 GitHub SSH key 后，执行：
+仓库公开可读，直接通过 HTTPS 安装：
 
 ```bash
-pi install git:git@github.com:tyf1996/pi-workspace-guard
+pi install git:https://github.com/tyf1996/pi-workspace-guard.git
 ```
 
 独立 package 与 Workspace Kit 安装器复制的 `${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/extensions/workspace-guard.ts` 二选一。若该文件已经存在，先备份并移出 `extensions/` 目录，再安装 package，避免 Pi 重复加载两份 Extension。
@@ -19,13 +19,13 @@ pi install git:git@github.com:tyf1996/pi-workspace-guard
 /workspace-guard
 ```
 
-`/workspace-guard` 会显示规则版本、当前 workspace、状态文件读取情况、Git 前置检查和最近的完成检查结果。
+`/workspace-guard` 会立即检查 Pi 当前加载的 context files，并显示规则版本、当前 workspace、状态文件读取情况、Git 前置检查和最近的完成检查结果。未启用时会显示当前 cwd 和 Pi 实际加载的 context 文件路径。
 
 更新和移除：
 
 ```bash
-pi update --extension git:git@github.com:tyf1996/pi-workspace-guard
-pi remove git:git@github.com:tyf1996/pi-workspace-guard
+pi update --extension git:https://github.com/tyf1996/pi-workspace-guard.git
+pi remove git:https://github.com/tyf1996/pi-workspace-guard.git
 ```
 
 ## 启用条件
