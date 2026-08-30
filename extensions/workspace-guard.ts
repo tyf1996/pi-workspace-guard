@@ -1,11 +1,10 @@
-// workspace-kit:managed-pi-extension name=workspace-guard version=3
+// workspace-kit:managed-pi-extension name=workspace-guard version=4
 
 import { existsSync, realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 
 const MANAGED_ADAPTER_MARKER = "proj:managed-agent-adapter:start agent=shared";
 const RULE_VERSION_PATTERN = /proj:managed-workspace-rules:start version=(\d+)/;
-const STATE_RELATIVE_PATH = ".workspace/PROJECT_STATE.md";
 const MANAGED_OVERLAY_PATHS = new Set([
 	".claude/settings.local.json",
 	".workspace/RULES.md",
@@ -158,13 +157,6 @@ export function dangerousCommandReason(command) {
 	return DANGEROUS_COMMANDS.find(({ pattern }) => pattern.test(command))?.reason;
 }
 
-function commandReadsState(command) {
-	return (
-		typeof command === "string" &&
-		/\b(?:cat|sed|head|tail|bat|rg)\b[^;&|\n]*\.workspace\/PROJECT_STATE\.md\b/.test(command)
-	);
-}
-
 function shortFailure(stdout, stderr) {
 	const text = `${stdout ?? ""}\n${stderr ?? ""}`.trim();
 	if (!text) return "git diff --check 返回非零状态";
@@ -178,7 +170,6 @@ export default function workspaceGuard(pi) {
 		workspaceRootPhysical: undefined,
 		gitRoot: undefined,
 		ruleVersion: undefined,
-		stateRead: false,
 		gitChecks: { status: false, diff: false, cached: false },
 		readPaths: new Set(),
 		pendingWrites: new Set(),
@@ -194,7 +185,6 @@ export default function workspaceGuard(pi) {
 		state.workspaceRootPhysical = realpathOrResolved(workspaceRoot);
 		state.gitRoot = undefined;
 		state.ruleVersion = ruleVersion;
-		state.stateRead = false;
 		state.gitChecks = { status: false, diff: false, cached: false };
 		state.readPaths.clear();
 		state.pendingWrites.clear();
@@ -222,7 +212,6 @@ export default function workspaceGuard(pi) {
 
 	function preflightMissing() {
 		const missing = [];
-		if (!state.stateRead) missing.push(`读取 ${STATE_RELATIVE_PATH}`);
 		if (state.gitRoot) {
 			if (!state.gitChecks.status) missing.push("git status");
 			if (!state.gitChecks.diff) missing.push("git diff");
@@ -308,16 +297,7 @@ export default function workspaceGuard(pi) {
 
 		if (event.toolName === "read") {
 			const path = inputPath(event.input, ctx.cwd);
-			if (path) {
-				const physical = realpathOrResolved(path);
-				state.readPaths.add(physical);
-				const statePath = state.workspaceRoot ? resolve(state.workspaceRoot, STATE_RELATIVE_PATH) : undefined;
-				const offset = typeof event.input.offset === "number" ? event.input.offset : 1;
-				const limit = event.input.limit;
-				if (statePath && path === statePath && offset <= 1 && (limit === undefined || Number(limit) >= 100)) {
-					state.stateRead = true;
-				}
-			}
+			if (path) state.readPaths.add(realpathOrResolved(path));
 		}
 
 		if (event.toolName === "bash" && typeof event.input.command === "string") {
@@ -326,7 +306,6 @@ export default function workspaceGuard(pi) {
 			state.gitChecks.status ||= checks.status;
 			state.gitChecks.diff ||= checks.diff;
 			state.gitChecks.cached ||= checks.cached;
-			if (commandReadsState(command)) state.stateRead = true;
 		}
 
 		if (state.pendingWrites.delete(event.toolCallId)) state.writesSinceCheck = true;
@@ -387,7 +366,6 @@ export default function workspaceGuard(pi) {
 				`规则版本：${state.ruleVersion ?? "未知"}`,
 				`workspace：${state.workspaceRoot}`,
 				`项目类型：${state.gitRoot ? `Git (${state.gitRoot})` : "非 Git"}`,
-				`PROJECT_STATE：${state.stateRead ? "已读取" : "未读取"}`,
 				state.gitRoot
 					? `Git 前置：status=${state.gitChecks.status ? "是" : "否"}，diff=${state.gitChecks.diff ? "是" : "否"}，cached=${state.gitChecks.cached ? "是" : "否"}`
 					: "Git 前置：不适用",

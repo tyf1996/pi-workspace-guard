@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import workspaceGuard, {
@@ -11,8 +11,8 @@ import workspaceGuard, {
 } from "../extensions/workspace-guard.ts";
 
 const MANAGED_CONTEXT = `
-<!-- proj:managed-agent-adapter:start agent=shared version=2 -->
-<!-- proj:managed-workspace-rules:start version=10 -->
+<!-- proj:managed-agent-adapter:start agent=shared version=3 -->
+<!-- proj:managed-workspace-rules:start version=11 -->
 `;
 
 function createHarness(root, options = {}) {
@@ -107,7 +107,7 @@ async function activate(harness, root, content = MANAGED_CONTEXT) {
 
 assert.equal(
 	isHighConfidenceReadOnlyCommand(
-		"sed -n '1,120p' .workspace/PROJECT_STATE.md && git status --short && git diff && git diff --cached",
+		"sed -n '1,120p' .workspace/RULES.md && git status --short && git diff && git diff --cached",
 	),
 	true,
 );
@@ -134,14 +134,12 @@ assert.equal(dangerousCommandReason("git diff --check"), undefined);
 
 const root = await mkdtemp(join(tmpdir(), "workspace-guard-"));
 try {
-	await mkdir(join(root, ".workspace"));
-	await writeFile(join(root, ".workspace", "PROJECT_STATE.md"), "# state\n", "utf8");
 	await writeFile(join(root, "AGENTS.md"), MANAGED_CONTEXT, "utf8");
 	await writeFile(join(root, "target.txt"), "before\n", "utf8");
 
 	const commandOnly = createHarness(root);
 	await commandOnly.commands.get("workspace-guard").handler("", commandOnly.ctx);
-	assert.match(commandOnly.notifications.at(-1).message, /规则版本：10/);
+	assert.match(commandOnly.notifications.at(-1).message, /规则版本：11/);
 	assert.match(commandOnly.notifications.at(-1).message, new RegExp(`workspace：${root}`));
 
 	const unmanagedCommand = createHarness(root, {
@@ -174,17 +172,6 @@ try {
 
 	const target = join(root, "target.txt");
 	let blocked = await harness.handlers.get("tool_call")(
-		eventFor("edit", "edit-before-state", { path: target, oldText: "before", newText: "after" }),
-		harness.ctx,
-	);
-	assert.equal(blocked.block, true);
-	assert.match(blocked.reason, /PROJECT_STATE/);
-
-	await harness.handlers.get("tool_result")(
-		resultFor("read", "read-state", { path: join(root, ".workspace", "PROJECT_STATE.md") }),
-		harness.ctx,
-	);
-	blocked = await harness.handlers.get("tool_call")(
 		eventFor("edit", "edit-before-git", { path: target, oldText: "before", newText: "after" }),
 		harness.ctx,
 	);
@@ -258,15 +245,10 @@ try {
 		harness.ctx,
 	);
 	assert.equal(blocked.block, true);
-	assert.doesNotMatch(blocked.reason, /PROJECT_STATE/);
 	assert.match(blocked.reason, /git status/);
 
 	const nonGit = createHarness(root, { git: false });
 	await activate(nonGit, root);
-	await nonGit.handlers.get("tool_result")(
-		resultFor("read", "non-git-state", { path: join(root, ".workspace", "PROJECT_STATE.md") }),
-		nonGit.ctx,
-	);
 	blocked = await nonGit.handlers.get("tool_call")(
 		eventFor("edit", "non-git-edit", { path: target, oldText: "before", newText: "after" }),
 		nonGit.ctx,
