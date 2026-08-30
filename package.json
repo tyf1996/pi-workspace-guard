@@ -1,6 +1,6 @@
 {
   "name": "pi-workspace-guard",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Workspace Kit workflow guard extension for Pi",
   "type": "module",

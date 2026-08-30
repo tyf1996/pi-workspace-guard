@@ -19,7 +19,7 @@ pi install git:https://github.com/tyf1996/pi-workspace-guard.git
 /workspace-guard
 ```
 
-`/workspace-guard` 会立即检查 Pi 当前加载的 context files，并显示规则版本、当前 workspace、Git 前置检查和最近的完成检查结果。未启用时会显示当前 cwd 和 Pi 实际加载的 context 文件路径。
+`/workspace-guard` 会立即检查 Pi 当前加载的 context files，并显示规则版本、当前 workspace 和 Git 前置检查状态。未启用时会显示当前 cwd 和 Pi 实际加载的 context 文件路径。
 
 更新和移除：
 
@@ -40,10 +40,8 @@ proj:managed-workspace-rules:start version=<N>
 ## 门禁范围
 
 - 在每次 Agent run 的 system prompt 末尾追加简短执行协议。
-- Git 项目每次 Agent run 写入前要求成功执行 `git status`、`git diff` 和 `git diff --cached`。
-- 阻断可判定的 workspace 越界写入和未跟踪受管 overlay 写入。
-- 交互模式逐次确认数据删除、权限提升、设备烧录等高风险命令；非交互模式默认阻断。
-- 发生写入后运行 `git diff --check`；失败时最多自动续跑一次。
+- Git 项目每次 Agent run 修改当前 worktree 前要求成功执行 `git status`、`git diff` 和 `git diff --cached`；明确位于 Git worktree 外的运行时输出不适用。
+- 阻断对未跟踪受管 overlay 副本的直接写入，只允许通过 `proj rules` 或 `proj wt sync` 更新。
 
 ## 边界
 

@@ -1,6 +1,6 @@
-// workspace-kit:managed-pi-extension name=workspace-guard version=4
+// workspace-kit:managed-pi-extension name=workspace-guard version=5
 
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 
 const MANAGED_ADAPTER_MARKER = "proj:managed-agent-adapter:start agent=shared";
@@ -21,26 +21,6 @@ Pi 当前加载的全部 AGENTS.md 是本轮工作的完整规则合同，必须
 workspace-guard 只强制部分可机械判断的边界；未被阻断不代表符合 AGENTS.md。
 </workspace_guard>`;
 
-const DANGEROUS_COMMANDS = [
-	{ pattern: /(^|[;&|]\s*)\s*(?:sudo|doas|pkexec)\b/i, reason: "权限提升" },
-	{ pattern: /(^|[;&|]\s*)\s*su\s+(?:-|--login|-c\b)/i, reason: "权限提升" },
-	{ pattern: /(^|[;&|]\s*)\s*(?:rm|unlink|rmdir)\b/i, reason: "数据删除" },
-	{ pattern: /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*clean\b/i, reason: "Git 清理" },
-	{ pattern: /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*reset\s+--hard\b/i, reason: "Git 强制重置" },
-	{ pattern: /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*restore\b/i, reason: "Git 工作区覆盖" },
-	{ pattern: /\bgit\s+(?:-[A-Za-z]\s+\S+\s+)*checkout\b[^;&|\n]*\s--(?:\s|$)/i, reason: "Git 工作区覆盖" },
-	{ pattern: /\bfind\b[^;&|\n]*\s-(?:delete|exec|execdir|ok|okdir)\b/i, reason: "数据删除或外部执行" },
-	{ pattern: /(^|[;&|]\s*)\s*(?:shred|truncate)\b/i, reason: "数据破坏" },
-	{ pattern: /\b(?:chmod|chown|chgrp)\b/i, reason: "权限变更" },
-	{ pattern: /\bdd\b[^;&|\n]*\bof=\/dev\//i, reason: "块设备写入" },
-	{ pattern: /\b(?:mkfs(?:\.\w+)?|wipefs)\b/i, reason: "块设备写入" },
-	{ pattern: /\b(?:flashrom|rkdeveloptool|uuu|dfu-util)\b/i, reason: "设备烧录" },
-	{ pattern: /\b(?:fastboot\s+(?:flash|erase)|esptool(?:\.py)?\b[^;&|\n]*\bwrite_flash)\b/i, reason: "设备烧录" },
-	{ pattern: /\bterraform\s+(?:apply|destroy)\b/i, reason: "基础设施变更" },
-	{ pattern: /\bkubectl\s+(?:apply|create|delete|patch|replace|scale)\b/i, reason: "集群变更" },
-	{ pattern: /\bhelm\s+(?:install|upgrade|uninstall|rollback)\b/i, reason: "集群变更" },
-];
-
 function realpathOrResolved(path) {
 	try {
 		return realpathSync(path);
@@ -52,16 +32,6 @@ function realpathOrResolved(path) {
 function isInside(root, path) {
 	const child = relative(root, path);
 	return child === "" || (!child.startsWith("..") && !isAbsolute(child));
-}
-
-function physicalDestination(path) {
-	let existing = path;
-	while (!existsSync(existing)) {
-		const parent = dirname(existing);
-		if (parent === existing) break;
-		existing = parent;
-	}
-	return resolve(realpathOrResolved(existing), relative(existing, path));
 }
 
 function inputPath(input, cwd) {
@@ -152,46 +122,21 @@ export function gitChecksFromCommand(command) {
 	return checks;
 }
 
-export function dangerousCommandReason(command) {
-	if (typeof command !== "string") return undefined;
-	return DANGEROUS_COMMANDS.find(({ pattern }) => pattern.test(command))?.reason;
-}
-
-function shortFailure(stdout, stderr) {
-	const text = `${stdout ?? ""}\n${stderr ?? ""}`.trim();
-	if (!text) return "git diff --check 返回非零状态";
-	return text.split("\n").slice(0, 8).join("\n");
-}
-
 export default function workspaceGuard(pi) {
 	const state = {
 		active: false,
 		workspaceRoot: undefined,
-		workspaceRootPhysical: undefined,
 		gitRoot: undefined,
 		ruleVersion: undefined,
 		gitChecks: { status: false, diff: false, cached: false },
-		readPaths: new Set(),
-		pendingWrites: new Set(),
-		writesSinceCheck: false,
-		baselineDiffCheckClean: undefined,
-		completionRetryUsed: false,
-		lastCompletionFailure: undefined,
 	};
 
 	function reset(workspaceRoot, ruleVersion) {
 		state.active = true;
 		state.workspaceRoot = workspaceRoot;
-		state.workspaceRootPhysical = realpathOrResolved(workspaceRoot);
 		state.gitRoot = undefined;
 		state.ruleVersion = ruleVersion;
 		state.gitChecks = { status: false, diff: false, cached: false };
-		state.readPaths.clear();
-		state.pendingWrites.clear();
-		state.writesSinceCheck = false;
-		state.baselineDiffCheckClean = undefined;
-		state.completionRetryUsed = false;
-		state.lastCompletionFailure = undefined;
 	}
 
 	async function activate(contextFiles, ctx) {
@@ -218,12 +163,6 @@ export default function workspaceGuard(pi) {
 			if (!state.gitChecks.cached) missing.push("git diff --cached");
 		}
 		return missing;
-	}
-
-	async function captureBaseline() {
-		if (!state.gitRoot || state.baselineDiffCheckClean !== undefined) return;
-		const result = await pi.exec("git", ["diff", "--check"], { cwd: state.gitRoot });
-		state.baselineDiffCheckClean = result.code === 0;
 	}
 
 	async function isTrackedManagedPath(path) {
@@ -253,12 +192,7 @@ export default function workspaceGuard(pi) {
 		const isWrite = isFileWrite || isKnownCustomWrite || isShellWrite;
 
 		if (!isWrite) return undefined;
-		if (path && state.workspaceRootPhysical) {
-			const destination = physicalDestination(path);
-			if (!isInside(state.workspaceRootPhysical, destination)) {
-				return { block: true, reason: `workspace-guard：拒绝写出当前 workspace：${path}` };
-			}
-		}
+		if (path && state.gitRoot && !isInside(state.gitRoot, path)) return undefined;
 
 		const missing = preflightMissing();
 		if (missing.length > 0) {
@@ -269,36 +203,11 @@ export default function workspaceGuard(pi) {
 			return { block: true, reason: `workspace-guard：${path} 是未跟踪的受管 overlay 副本，只允许通过 proj rules/proj wt sync 更新` };
 		}
 
-		if (!state.gitRoot && path && existsSync(path) && !state.readPaths.has(realpathOrResolved(path))) {
-			return { block: true, reason: `workspace-guard：非 Git 项目修改已有文件前必须先读取目标：${path}` };
-		}
-
-		if (command) {
-			const danger = dangerousCommandReason(command);
-			if (danger) {
-				if (!ctx.hasUI) {
-					return { block: true, reason: `workspace-guard：非交互模式禁止未经确认的${danger}` };
-				}
-				const allowed = await ctx.ui.confirm("workspace-guard 高风险动作", `${danger}：\n\n${command}\n\n允许执行一次？`);
-				if (!allowed) return { block: true, reason: `workspace-guard：用户未批准${danger}` };
-			}
-		}
-
-		await captureBaseline();
-		state.pendingWrites.add(event.toolCallId);
 		return undefined;
 	});
 
-	pi.on("tool_result", (event, ctx) => {
-		if (!state.active || event.isError) {
-			state.pendingWrites.delete(event.toolCallId);
-			return undefined;
-		}
-
-		if (event.toolName === "read") {
-			const path = inputPath(event.input, ctx.cwd);
-			if (path) state.readPaths.add(realpathOrResolved(path));
-		}
+	pi.on("tool_result", (event) => {
+		if (!state.active || event.isError) return undefined;
 
 		if (event.toolName === "bash" && typeof event.input.command === "string") {
 			const command = event.input.command;
@@ -308,43 +217,11 @@ export default function workspaceGuard(pi) {
 			state.gitChecks.cached ||= checks.cached;
 		}
 
-		if (state.pendingWrites.delete(event.toolCallId)) state.writesSinceCheck = true;
 		return undefined;
 	});
 
-	pi.on("agent_end", async (_event, ctx) => {
-		if (!state.active || !state.gitRoot || !state.writesSinceCheck) return;
-		const result = await pi.exec("git", ["diff", "--check"], { cwd: state.gitRoot });
-		if (result.code === 0) {
-			state.writesSinceCheck = false;
-			state.lastCompletionFailure = undefined;
-			return;
-		}
-
-		state.lastCompletionFailure = shortFailure(result.stdout, result.stderr);
-		if (state.baselineDiffCheckClean === false) {
-			state.writesSinceCheck = false;
-			ctx.ui.notify("workspace-guard：已有 diff --check 错误，未自动要求修改用户原有改动。", "warning");
-			return;
-		}
-		if (!state.completionRetryUsed) {
-			state.completionRetryUsed = true;
-			pi.sendUserMessage(
-				`[workspace-guard] 完成检查失败。请修复后重新验证；不得在失败仍存在时宣称完成。\n\n${state.lastCompletionFailure}`,
-				{ deliverAs: "followUp" },
-			);
-			return;
-		}
-		state.writesSinceCheck = false;
-		ctx.ui.notify("workspace-guard：git diff --check 仍失败，已达到本轮自动续跑上限。", "error");
-	});
-
 	pi.on("agent_settled", () => {
-		state.completionRetryUsed = false;
 		state.gitChecks = { status: false, diff: false, cached: false };
-		state.readPaths.clear();
-		state.pendingWrites.clear();
-		state.baselineDiffCheckClean = undefined;
 	});
 
 	pi.registerCommand("workspace-guard", {
@@ -369,9 +246,8 @@ export default function workspaceGuard(pi) {
 				state.gitRoot
 					? `Git 前置：status=${state.gitChecks.status ? "是" : "否"}，diff=${state.gitChecks.diff ? "是" : "否"}，cached=${state.gitChecks.cached ? "是" : "否"}`
 					: "Git 前置：不适用",
-				`完成检查：${state.lastCompletionFailure ? `失败（${state.lastCompletionFailure.split("\n")[0]}）` : "无已知失败"}`,
 			];
-			ctx.ui.notify(checks.join("\n"), state.lastCompletionFailure ? "warning" : "info");
+			ctx.ui.notify(checks.join("\n"), "info");
 		},
 	});
 }
